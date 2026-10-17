@@ -16,6 +16,11 @@ const client = new Client({
 const app = express();
 app.use(express.json());
 
+// Railwayのヘルスチェック用ルート（これがないとSIGTERMで強制終了します）
+app.get('/', (req, res) => {
+    res.status(200).send('Bot is online!');
+});
+
 const PRICE_PER_100K = parseInt(process.env.PRICE_PER_100K) || 6; 
 const MIN_PURCHASE = parseInt(process.env.MIN_PURCHASE) || 1000000;  
 
@@ -183,7 +188,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.showModal(modal);
         }
 
-        // 4. PayPayリンク入力時（管理者確認・承認ボタン＆即時配達機能付き）
+        // 4. PayPayリンク入力時
         else if (interaction.isModalSubmit() && interaction.customId.startsWith('pay_modal_')) {
             const parts = interaction.customId.split('_');
             const orderId = parts[2];
@@ -192,7 +197,7 @@ client.on('interactionCreate', async interaction => {
 
             const payInput = interaction.fields.getTextInputValue('pay_link_input');
 
-            // PayPayリンク形式のチェック
+            // PayPayリンク形式チェック
             if (!payInput.includes('pay.paypay.ne.jp')) {
                 return interaction.reply({
                     content: '❌ **無効な入力です。**\nPayPayの正しい送金リンク（`https://pay.paypay.ne.jp/...`）を入力してください。',
@@ -217,7 +222,6 @@ client.on('interactionCreate', async interaction => {
                     )
                     .setColor(0xFEE75C);
 
-                // 管理者がPayPayの受け取りを確認して1タップで自動配達を実行できるボタン
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId(`approve_deliver_${buyer.id}_${numVal}`)
@@ -229,7 +233,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // 5. 管理者が「入金確認＆自動配達実行」ボタンを押したときの処理
+        // 5. 管理者が「入金確認＆自動配達実行」ボタンを押したとき
         else if (interaction.isButton() && interaction.customId.startsWith('approve_deliver_')) {
             const parts = interaction.customId.split('_');
             const buyerId = parts[2];
@@ -237,13 +241,12 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.deferUpdate();
 
-            // 配達アカウントから自動送信実行
             const success = await sendOwoFromDeliveryAccount(interaction.channelId, buyerId, numVal);
 
             if (success) {
                 await interaction.followUp({ content: `✅ <@${buyerId}> への ${numVal.toLocaleString()} OwO の自動配達コマンドを発行しました！` });
             } else {
-                await interaction.followUp({ content: `⚠️ 配達アカウントからの送信に失敗しました。` });
+                await interaction.followUp({ content: `⚠️ 配達アカウントからの送信に失敗しました。DELIVERY_USER_TOKENS を確認してください。` });
             }
         }
     } catch (error) {
@@ -254,8 +257,8 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
 });
 

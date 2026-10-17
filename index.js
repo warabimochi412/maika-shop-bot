@@ -82,7 +82,7 @@ client.on('interactionCreate', async interaction => {
         else if (interaction.isModalSubmit() && interaction.customId === 'purchase_modal') {
             const inputVal = interaction.fields.getTextInputValue('quantity_input');
             
-            // 入力値から数字を簡易抽出（簡易パース）
+            // 入力値から数字を簡易抽出
             let num = parseInt(inputVal.replace(/[^0-9]/g, '')) || 0;
             if (inputVal.toLowerCase().includes('m')) num *= 1000000;
             if (inputVal.includes('万')) num *= 10000;
@@ -91,11 +91,11 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ content: `⚠️ 最低購入量は ${MIN_PURCHASE.toLocaleString()} 以上です。`, ephemeral: true });
             }
 
-            // 金額の計算（100kあたりPRICE_PER_100K円）
+            // 金額の計算
             const totalPrice = Math.ceil((num / 100000) * PRICE_PER_100K);
-            const orderId = Math.random().toString(36.substring(2, 15)) + Math.random().toString(36).substring(2, 15);
+            const orderId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-            // 「支払う」ボタン付きの注文確認メッセージを表示（自分だけにみえる ephemeral）
+            // 「支払う」ボタン付きの注文確認メッセージを表示
             const embed = new EmbedBuilder()
                 .setTitle('購入内容を確保しました。')
                 .setDescription(
@@ -118,9 +118,11 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
 
-        // 3. 「支払う」ボタンが押されたとき（PayPayリンク入力モーダルを表示）
+        // 3. 「支払う」ボタンが押されたとき
         else if (interaction.isButton() && interaction.customId.startsWith('pay_')) {
-            const [, orderId, num] = interaction.customId.split('_');
+            const parts = interaction.customId.split('_');
+            const orderId = parts[1];
+            const num = parts[2];
 
             const modal = new ModalBuilder()
                 .setCustomId(`pay_modal_${orderId}_${num}`)
@@ -137,9 +139,11 @@ client.on('interactionCreate', async interaction => {
             await interaction.showModal(modal);
         }
 
-        // 4. PayPayリンク入力モーダルが送信されたとき（管理者・ショップチャンネルへ通知）
+        // 4. PayPayリンク入力モーダルが送信されたとき
         else if (interaction.isModalSubmit() && interaction.customId.startsWith('pay_modal_')) {
-            const [, , orderId, num] = interaction.customId.split('_');
+            const parts = interaction.customId.split('_');
+            const orderId = parts[2];
+            const num = parts[3];
             const payLink = interaction.fields.getTextInputValue('pay_link_input');
             const buyer = interaction.user;
 
@@ -148,7 +152,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ content: '✅ 支払いリンクを受け付けました！確認して配達を手配します。', ephemeral: true });
 
-            // ショップチャンネルに注文情報とPayPayリンクを通知
+            // ショップチャンネルに通知
             const channel = await client.channels.fetch(process.env.SHOP_CHANNEL_ID);
             if (channel) {
                 let assignedDeliveryId = process.env.ADMIN_IDS;
@@ -178,7 +182,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// 外部Webhookからの自動通知用エンドポイント（必要に応じて）
+// 外部Webhookからの自動通知用エンドポイント
 app.post('/confirm-payment', async (req, res) => {
     const { secret, amount } = req.body;
     if (secret !== process.env.WEBHOOK_SECRET) {

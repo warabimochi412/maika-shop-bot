@@ -1,6 +1,16 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const https = require('https');
+const http = require('http'); // 追加: Railwayの強制終了を防ぐための標準サーバー
 require('dotenv').config();
+
+// Railwayのポート監視（SIGTERM対策）をクリアするための簡易サーバー
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot is running');
+}).listen(PORT, '0.0.0.0', () => {
+    console.log(`Keep-alive HTTP Server running on port ${PORT}`);
+});
 
 const client = new Client({
     intents: [

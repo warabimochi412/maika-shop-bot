@@ -1,0 +1,14 @@
+{
+  "name": "maika-shop-bot",
+  "version": "1.0.0",
+  "description": "Discord PayPay Vending Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5"
+  }
+}

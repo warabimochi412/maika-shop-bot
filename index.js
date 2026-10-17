@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const express = require('express');
 const https = require('https');
 require('dotenv').config();
 
@@ -13,25 +12,15 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message]
 });
 
-const app = express();
-app.use(express.json());
-
-// Railwayのヘルスチェック用ルート（これがないとSIGTERMで強制終了します）
-app.get('/', (req, res) => {
-    res.status(200).send('Bot is online!');
-});
-
 const PRICE_PER_100K = parseInt(process.env.PRICE_PER_100K) || 6; 
 const MIN_PURCHASE = parseInt(process.env.MIN_PURCHASE) || 1000000;  
 
-// 配達用ユーザーアカウントのトークン（カンマ区切り）
 const DELIVERY_USER_TOKENS = process.env.DELIVERY_USER_TOKENS 
     ? process.env.DELIVERY_USER_TOKENS.split(',').map(t => t.trim()) 
     : [];
 
 let currentDeliveryIndex = 0;
 
-// 配達用ユーザーアカウントから owo send を自動送信する関数
 async function sendOwoFromDeliveryAccount(channelId, buyerId, amount) {
     if (DELIVERY_USER_TOKENS.length === 0) {
         console.error('配達用ユーザートークン(DELIVERY_USER_TOKENS)が設定されていません。');
@@ -112,7 +101,6 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
     try {
-        // 1. 「購入」ボタン押下
         if (interaction.isButton() && interaction.customId === 'open_purchase_modal') {
             const modal = new ModalBuilder()
                 .setCustomId('purchase_modal')
@@ -128,8 +116,6 @@ client.on('interactionCreate', async interaction => {
             modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
             await interaction.showModal(modal);
         }
-
-        // 2. 数量入力時
         else if (interaction.isModalSubmit() && interaction.customId === 'purchase_modal') {
             const inputVal = interaction.fields.getTextInputValue('quantity_input');
             
@@ -165,8 +151,6 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
-
-        // 3. 「支払う」ボタン押下
         else if (interaction.isButton() && interaction.customId.startsWith('pay_')) {
             const parts = interaction.customId.split('_');
             const orderId = parts[1];
@@ -187,8 +171,6 @@ client.on('interactionCreate', async interaction => {
             modal.addComponents(new ActionRowBuilder().addComponents(payInput));
             await interaction.showModal(modal);
         }
-
-        // 4. PayPayリンク入力時
         else if (interaction.isModalSubmit() && interaction.customId.startsWith('pay_modal_')) {
             const parts = interaction.customId.split('_');
             const orderId = parts[2];
@@ -197,7 +179,6 @@ client.on('interactionCreate', async interaction => {
 
             const payInput = interaction.fields.getTextInputValue('pay_link_input');
 
-            // PayPayリンク形式チェック
             if (!payInput.includes('pay.paypay.ne.jp')) {
                 return interaction.reply({
                     content: '❌ **無効な入力です。**\nPayPayの正しい送金リンク（`https://pay.paypay.ne.jp/...`）を入力してください。',
@@ -232,8 +213,6 @@ client.on('interactionCreate', async interaction => {
                 await channel.send({ embeds: [embed], components: [row] });
             }
         }
-
-        // 5. 管理者が「入金確認＆自動配達実行」ボタンを押したとき
         else if (interaction.isButton() && interaction.customId.startsWith('approve_deliver_')) {
             const parts = interaction.customId.split('_');
             const buyerId = parts[2];
@@ -255,11 +234,6 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: '⚠️ エラーが発生しました。もう一度お試しください。', ephemeral: true }).catch(() => {});
         }
     }
-});
-
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`);
 });
 
 client.login(process.env.DISCORD_TOKEN);

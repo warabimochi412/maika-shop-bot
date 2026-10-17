@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const express = require('express');
+const https = require('https');
 require('dotenv').config();
 
 const client = new Client({
@@ -18,11 +19,60 @@ app.use(express.json());
 const PRICE_PER_100K = parseInt(process.env.PRICE_PER_100K) || 6; 
 const MIN_PURCHASE = parseInt(process.env.MIN_PURCHASE) || 1000000;  
 
-const DELIVERY_ACCOUNT_IDS = process.env.DELIVERY_ACCOUNT_IDS 
-    ? process.env.DELIVERY_ACCOUNT_IDS.split(',').map(id => id.trim()) 
+// 配達用ユーザーアカウントのトークン（カンマ区切り）
+const DELIVERY_USER_TOKENS = process.env.DELIVERY_USER_TOKENS 
+    ? process.env.DELIVERY_USER_TOKENS.split(',').map(t => t.trim()) 
     : [];
 
 let currentDeliveryIndex = 0;
+
+// 配達用ユーザーアカウントから owo send を自動送信する関数
+async function sendOwoFromDeliveryAccount(channelId, buyerId, amount) {
+    if (DELIVERY_USER_TOKENS.length === 0) {
+        console.error('配達用ユーザートークン(DELIVERY_USER_TOKENS)が設定されていません。');
+        return false;
+    }
+
+    const token = DELIVERY_USER_TOKENS[currentDeliveryIndex];
+    currentDeliveryIndex = (currentDeliveryIndex + 1) % DELIVERY_USER_TOKENS.length;
+
+    const postData = JSON.stringify({
+        content: `owo send <@${buyerId}> ${amount}`
+    });
+
+    const options = {
+        hostname: 'discord.com',
+        path: `/api/v9/channels/${channelId}/messages`,
+        method: 'POST',
+        headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+        }
+    };
+
+    return new Promise((resolve) => {
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200 || res.statusCode === 201) {
+                    console.log(`配達アカウントから owo send を送信しました (${amount} OwO)`);
+                    resolve(true);
+                } else {
+                    console.error('配達メッセージ送信エラー:', res.statusCode, data);
+                    resolve(false);
+                }
+            });
+        });
+        req.on('error', (e) => {
+            console.error('配達リクエストエラー:', e);
+            resolve(false);
+        });
+        req.write(postData);
+        req.end();
+    });
+}
 
 client.once('ready', async () => {
     console.log(`Botが正常に起動しました: ${client.user.tag}`);
@@ -57,7 +107,7 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
     try {
-        // 1. 「購入」ボタンを押したとき
+        // 1. 「購入」ボタン押下
         if (interaction.isButton() && interaction.customId === 'open_purchase_modal') {
             const modal = new ModalBuilder()
                 .setCustomId('purchase_modal')
@@ -74,7 +124,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.showModal(modal);
         }
 
-        // 2. 数量を入力したとき
+        // 2. 数量入力時
         else if (interaction.isModalSubmit() && interaction.customId === 'purchase_modal') {
             const inputVal = interaction.fields.getTextInputValue('quantity_input');
             
@@ -111,7 +161,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
 
-        // 3. 「支払う」ボタンを押したとき
+        // 3. 「支払う」ボタン押下
         else if (interaction.isButton() && interaction.customId.startsWith('pay_')) {
             const parts = interaction.customId.split('_');
             const orderId = parts[1];
@@ -124,7 +174,7 @@ client.on('interactionCreate', async interaction => {
 
             const payInput = new TextInputBuilder()
                 .setCustomId('pay_link_input')
-                .setLabel(`¥${totalPrice}のPayPayリンク/共有文を入力`)
+                .setLabel(`¥${totalPrice}のPayPayリンクを入力`)
                 .setStyle(TextInputStyle.Short)
                 .setPlaceholder('https://pay.paypay.ne.jp/...')
                 .setRequired(true);
@@ -133,7 +183,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.showModal(modal);
         }
 
-        // 4. PayPayリンクを入力したときの検証
+        // 4. PayPayリンク入力時（管理者確認・承認ボタン＆即時配達機能付き）
         else if (interaction.isModalSubmit() && interaction.customId.startsWith('pay_modal_')) {
             const parts = interaction.customId.split('_');
             const orderId = parts[2];
@@ -142,7 +192,7 @@ client.on('interactionCreate', async interaction => {
 
             const payInput = interaction.fields.getTextInputValue('pay_link_input');
 
-            // PayPayのリンク形式チェック
+            // PayPayリンク形式のチェック
             if (!payInput.includes('pay.paypay.ne.jp')) {
                 return interaction.reply({
                     content: '❌ **無効な入力です。**\nPayPayの正しい送金リンク（`https://pay.paypay.ne.jp/...`）を入力してください。',
@@ -152,27 +202,48 @@ client.on('interactionCreate', async interaction => {
 
             const buyer = interaction.user;
 
-            await interaction.reply({ content: '✅ 支払いリンクを受け付けました！管理者が確認の上、配達を行います。', ephemeral: true });
+            await interaction.reply({ content: '✅ 支払いリンクを受け付けました！入金確認後に自動配達が行われます。', ephemeral: true });
 
             const channel = await client.channels.fetch(process.env.SHOP_CHANNEL_ID);
             if (channel) {
-                let assignedDeliveryId = process.env.ADMIN_IDS;
-                if (DELIVERY_ACCOUNT_IDS.length > 0) {
-                    assignedDeliveryId = DELIVERY_ACCOUNT_IDS[currentDeliveryIndex];
-                    currentDeliveryIndex = (currentDeliveryIndex + 1) % DELIVERY_ACCOUNT_IDS.length;
-                }
+                const embed = new EmbedBuilder()
+                    .setTitle('🛒 新しい注文が入りました')
+                    .setDescription(
+                        `・**注文ID:** \`${orderId}\`\n` +
+                        `・**購入者:** <@${buyer.id}>\n` +
+                        `・**数量:** ${numVal.toLocaleString()} OwO\n` +
+                        `・**請求金額:** ¥${requiredPrice}\n` +
+                        `・**PayPayリンク:** ${payInput}`
+                    )
+                    .setColor(0xFEE75C);
 
-                await channel.send(
-                    `🛒 **新しい注文が入りました！**\n` +
-                    `・注文ID: \`${orderId}\`\n` +
-                    `・購入者: <@${buyer.id}>\n` +
-                    `・数量: ${numVal.toLocaleString()} OwO\n` +
-                    `・支払請求額: ¥${requiredPrice}\n` +
-                    `・PayPayリンク: ${payInput}\n` +
-                    `・担当配達アカウント: <@${assignedDeliveryId}>\n\n` +
-                    `🚚 **手動配達用コマンド:**\n` +
-                    `\`owo send <@${buyer.id}> ${numVal}\``
+                // 管理者がPayPayの受け取りを確認して1タップで自動配達を実行できるボタン
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`approve_deliver_${buyer.id}_${numVal}`)
+                        .setLabel('入金確認＆自動配達実行')
+                        .setStyle(ButtonStyle.Success)
                 );
+
+                await channel.send({ embeds: [embed], components: [row] });
+            }
+        }
+
+        // 5. 管理者が「入金確認＆自動配達実行」ボタンを押したときの処理
+        else if (interaction.isButton() && interaction.customId.startsWith('approve_deliver_')) {
+            const parts = interaction.customId.split('_');
+            const buyerId = parts[2];
+            const numVal = parseInt(parts[3]);
+
+            await interaction.deferUpdate();
+
+            // 配達アカウントから自動送信実行
+            const success = await sendOwoFromDeliveryAccount(interaction.channelId, buyerId, numVal);
+
+            if (success) {
+                await interaction.followUp({ content: `✅ <@${buyerId}> への ${numVal.toLocaleString()} OwO の自動配達コマンドを発行しました！` });
+            } else {
+                await interaction.followUp({ content: `⚠️ 配達アカウントからの送信に失敗しました。` });
             }
         }
     } catch (error) {
@@ -181,14 +252,6 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: '⚠️ エラーが発生しました。もう一度お試しください。', ephemeral: true }).catch(() => {});
         }
     }
-});
-
-app.post('/confirm-payment', async (req, res) => {
-    const { secret, amount } = req.body;
-    if (secret !== process.env.WEBHOOK_SECRET) {
-        return res.status(403).send('Unauthorized');
-    }
-    res.status(200).send('Success');
 });
 
 const PORT = process.env.PORT || 3000;

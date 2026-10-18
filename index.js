@@ -3,11 +3,11 @@ const https = require('https');
 const http = require('http');
 require('dotenv').config();
 
-// Railwayが提供するPORT環境変数を確実に取得し、全インターフェース（0.0.0.0）でリッスンする
+// 1. まず最初にHTTPサーバーを最速で立ち上げ、Railwayのヘルスチェックに即座に応答する
 const PORT = process.env.PORT || 8080;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot is running and healthy!');
+    res.end('OK');
 });
 
 server.listen(PORT, '0.0.0.0', () => {
@@ -231,4 +231,5 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+// Discordへのログインを実行
 client.login(process.env.DISCORD_TOKEN);

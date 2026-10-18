@@ -1,9 +1,9 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const https = require('https');
-const http = require('http'); // 追加: Railwayの強制終了を防ぐための標準サーバー
+const http = require('http');
 require('dotenv').config();
 
-// Railwayのポート監視（SIGTERM対策）をクリアするための簡易サーバー
+// Keep-alive HTTP Server
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -26,14 +26,14 @@ const PRICE_PER_100K = parseInt(process.env.PRICE_PER_100K) || 6;
 const MIN_PURCHASE = parseInt(process.env.MIN_PURCHASE) || 1000000;  
 
 const DELIVERY_USER_TOKENS = process.env.DELIVERY_USER_TOKENS 
-    ? process.env.DELIVERY_USER_TOKENS.split(',').map(t => t.trim()) 
+    ? process.env.DELIVERY_USER_TOKENS.split(',').map(t => t.trim()).filter(t => t.length > 0) 
     : [];
 
 let currentDeliveryIndex = 0;
 
 async function sendOwoFromDeliveryAccount(channelId, buyerId, amount) {
     if (DELIVERY_USER_TOKENS.length === 0) {
-        console.error('配達用ユーザートークン(DELIVERY_USER_TOKENS)が設定されていません。');
+        console.error('エラー: DELIVERY_USER_TOKENS が設定されていないか空です。');
         return false;
     }
 
@@ -61,10 +61,10 @@ async function sendOwoFromDeliveryAccount(channelId, buyerId, amount) {
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 if (res.statusCode === 200 || res.statusCode === 201) {
-                    console.log(`配達アカウントから owo send を送信しました (${amount} OwO)`);
+                    console.log(`配達成功: ${amount} OwO を送信しました。`);
                     resolve(true);
                 } else {
-                    console.error('配達メッセージ送信エラー:', res.statusCode, data);
+                    console.error(`配達失敗 HTTP Status: ${res.statusCode}, レスポンス: ${data}`);
                     resolve(false);
                 }
             });
@@ -80,33 +80,6 @@ async function sendOwoFromDeliveryAccount(channelId, buyerId, amount) {
 
 client.once('ready', async () => {
     console.log(`Botが正常に起動しました: ${client.user.tag}`);
-
-    try {
-        const channel = await client.channels.fetch(process.env.SHOP_CHANNEL_ID);
-        if (channel) {
-            const embed = new EmbedBuilder()
-                .setTitle('OwO Cowoncy 自販機')
-                .setDescription('下のボタンから購入数量を入力してください。送信先は購入者本人に固定されます。')
-                .addFields(
-                    { name: '価格', value: `${PRICE_PER_100K}円 / 10万`, inline: true },
-                    { name: '最低購入量', value: `${MIN_PURCHASE.toLocaleString()}`, inline: true },
-                    { name: '購入単位', value: '1万刻み', inline: true }
-                )
-                .setColor(0x5865F2);
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('open_purchase_modal')
-                    .setLabel('購入')
-                    .setStyle(ButtonStyle.Primary)
-            );
-
-            await channel.send({ embeds: [embed], components: [row] });
-            console.log('自販機パネルを送信しました。');
-        }
-    } catch (e) {
-        console.error('自販機パネルの送信に失敗しました:', e);
-    }
 });
 
 client.on('interactionCreate', async interaction => {
@@ -147,6 +120,8 @@ client.on('interactionCreate', async interaction => {
                     `**送信先:** <@${interaction.user.id}> (購入者本人)\n` +
                     `**数量:** ${num.toLocaleString()} OwO\n` +
                     `**支払額:** ${totalPrice}円\n\n` +
+                    `⚠️ **【購入前の注意点】**\n` +
+                    `ご自身のOwO所持上限・銀行上限を超えていないか確認してください。上限に達していると受け取りに失敗する場合があります。\n\n` +
                     `⏱️ **2分以内に支払いを完了してください。**\n` +
                     `下の **支払う** から¥${totalPrice}のPayPay送金リンクを入力してください。`
                 )
@@ -175,7 +150,7 @@ client.on('interactionCreate', async interaction => {
                 .setCustomId('pay_link_input')
                 .setLabel(`¥${totalPrice}のPayPayリンクを入力`)
                 .setStyle(TextInputStyle.Short)
-                .setPlaceholder('https://pay.paypay.ne.jp/...')
+                .setPlaceholder('https://pay.paypay.ne.jp/XXXXXX')
                 .setRequired(true);
 
             modal.addComponents(new ActionRowBuilder().addComponents(payInput));
@@ -187,11 +162,13 @@ client.on('interactionCreate', async interaction => {
             const numVal = parseInt(parts[3]);
             const requiredPrice = parseInt(parts[4]);
 
-            const payInput = interaction.fields.getTextInputValue('pay_link_input');
+            const payInput = interaction.fields.getTextInputValue('pay_link_input').trim();
 
-            if (!payInput.includes('pay.paypay.ne.jp')) {
+            // 厳格なPayPayリンク検証（...などの不正入力を弾く）
+            const paypayRegex = /^https:\/\/pay\.paypay\.ne\.jp\/[a-zA-Z0-9]+$/;
+            if (!paypayRegex.test(payInput)) {
                 return interaction.reply({
-                    content: '❌ **無効な入力です。**\nPayPayの正しい送金リンク（`https://pay.paypay.ne.jp/...`）を入力してください。',
+                    content: '❌ **有効なPayPayリンクではありません。**\n`https://pay.paypay.ne.jp/XXXXXX` の形式で正しいリンクを入力してください。',
                     ephemeral: true
                 });
             }
@@ -233,16 +210,22 @@ client.on('interactionCreate', async interaction => {
             const success = await sendOwoFromDeliveryAccount(interaction.channelId, buyerId, numVal);
 
             if (success) {
-                await interaction.followUp({ content: `✅ <@${buyerId}> への ${numVal.toLocaleString()} OwO の自動配達コマンドを発行しました！` });
+                await interaction.followUp({ 
+                    content: `✅ <@${buyerId}> への ${numVal.toLocaleString()} OwO の自動配達コマンドを発行しました！\n` +
+                             `※受け取り側（<@${buyerId}>）の所持上限・受け取りエラー等でOwO Bot側でキャンセルされた場合は、購入者様の容量調整後に再度実行してください。` 
+                });
             } else {
-                await interaction.followUp({ content: `⚠️ 配達アカウントからの送信に失敗しました。DELIVERY_USER_TOKENS を確認してください。` });
+                await interaction.followUp({ 
+                    content: `🚨 **【配達アカウントエラー】**\n` +
+                             `配達用アカウントからのメッセージ送信に失敗しました。\n` +
+                             `・配達アカウントのOwO所持金/残高不足\n` +
+                             `・配達アカウントの送信制限・トークン無効\n` +
+                             `上記を確認してください。` 
+                });
             }
         }
     } catch (error) {
         console.error('インタラクション処理エラー:', error);
-        if (interaction.isRepliable() && !interaction.replied) {
-            await interaction.reply({ content: '⚠️ エラーが発生しました。もう一度お試しください。', ephemeral: true }).catch(() => {});
-        }
     }
 });
 

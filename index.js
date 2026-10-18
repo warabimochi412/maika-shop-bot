@@ -1,18 +1,6 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const https = require('https');
-const http = require('http');
 require('dotenv').config();
-
-// 1. まず最初にHTTPサーバーを最速で立ち上げ、Railwayのヘルスチェックに即座に応答する
-const PORT = process.env.PORT || 8080;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('OK');
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Keep-alive HTTP Server running on port ${PORT}`);
-});
 
 const client = new Client({
     intents: [
@@ -231,5 +219,4 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Discordへのログインを実行
 client.login(process.env.DISCORD_TOKEN);

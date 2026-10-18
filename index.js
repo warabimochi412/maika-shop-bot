@@ -3,12 +3,14 @@ const https = require('https');
 const http = require('http');
 require('dotenv').config();
 
-// Keep-alive HTTP Server
+// Railwayが提供するPORT環境変数を確実に取得し、全インターフェース（0.0.0.0）でリッスンする
 const PORT = process.env.PORT || 8080;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot is running');
-}).listen(PORT, '0.0.0.0', () => {
+    res.end('Bot is running and healthy!');
+});
+
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Keep-alive HTTP Server running on port ${PORT}`);
 });
 
@@ -185,7 +187,7 @@ client.on('interactionCreate', async interaction => {
                         `・**注文ID:** \`${orderId}\`\n` +
                         `・**購入者:** <@${buyer.id}>\n` +
                         `・**数量:** ${numVal.toLocaleString()} OwO\n` +
-                        `・**請求金額:** ¥${requiredPrice}\n` +
+                        `・**請求金額:** ${requiredPrice}円\n` +
                         `・**PayPayリンク:** ${payInput}`
                     )
                     .setColor(0xFEE75C);

@@ -374,12 +374,25 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '権限がありません。', ephemeral: true });
       }
       const orderId = interaction.customId.slice(3);
-      if (data.orders[orderId]) {
-        data.orders[orderId].status = 'cancelled';
+      const cancelledOrder = data.orders[orderId];
+      if (cancelledOrder) {
+        cancelledOrder.status = 'cancelled';
         save();
+        try {
+          const buyer = await client.users.fetch(cancelledOrder.userId);
+          await buyer.send(
+            '❌ ご注文がキャンセルされました。\n' +
+            '注文ID: `' + orderId + '`\n' +
+            '数量: ' + fmt(cancelledOrder.quantity) + '\n' +
+            '金額: ' + cancelledOrder.price + '円\n\n' +
+            '再度購入する場合は、自販機の「購入」ボタンからやり直してください。'
+          );
+        } catch (e) {
+          console.error('cancel DM failed', e.message);
+        }
       }
       await updateShop();
-      return interaction.update({ content: '❌ キャンセル `' + orderId + '`', embeds: [], components: [] });
+      return interaction.update({ content: '❌ キャンセル `' + orderId + '`（購入者に通知済み）', embeds: [], components: [] });
     }
   } catch (err) {
     console.error(err);

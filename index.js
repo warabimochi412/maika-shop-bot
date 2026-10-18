@@ -154,7 +154,6 @@ client.on('interactionCreate', async interaction => {
 
             const payInput = interaction.fields.getTextInputValue('pay_link_input').trim();
 
-            // 厳格なPayPayリンク検証（...などの不正入力を弾く）
             const paypayRegex = /^https:\/\/pay\.paypay\.ne\.jp\/[a-zA-Z0-9]+$/;
             if (!paypayRegex.test(payInput)) {
                 return interaction.reply({

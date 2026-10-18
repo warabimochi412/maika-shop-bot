@@ -284,11 +284,12 @@ function checkPayPayLink(url, expectedYen) {
 
 function sendAsUser(token, channelId, content) {
   return new Promise((resolve) => {
-    const body = JSON.stringify({ content });
+    const body = JSON.stringify({ content: content });
+    const apiPath = '/api/v9/channels/' + String(channelId) + '/messages';
     const req = https.request(
       {
         hostname: 'discord.com',
-        path: `/api/v9/channels/${channelId}/messages`,
+        path: apiPath,
         method: 'POST',
         headers: {
           Authorization: token,
@@ -296,10 +297,10 @@ function sendAsUser(token, channelId, content) {
           'Content-Length': Buffer.byteLength(body),
         },
       },
-      (res) => {
+      function (res) {
         let d = '';
-        res.on('data', (c) => (d += c));
-        res.on('end', () => {
+        res.on('data', function (c) { d += c; });
+        res.on('end', function () {
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(true);
           else {
             console.error('sendAsUser fail', res.statusCode, d.slice(0, 200));
@@ -308,7 +309,7 @@ function sendAsUser(token, channelId, content) {
         });
       }
     );
-    req.on('error', (e) => {
+    req.on('error', function (e) {
       console.error('sendAsUser error', e.message);
       resolve(false);
     });
